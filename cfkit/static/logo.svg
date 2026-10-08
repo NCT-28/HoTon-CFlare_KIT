@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CFK">
+  <title>CFK</title>
+  <rect width="64" height="64" rx="14" fill="#f6821f"/>
+  <path d="M14 30a18 18 0 0 1 36 0" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M20 30a12 12 0 0 1 24 0" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="4" stroke-linecap="round"/>
+  <text x="32" y="55" text-anchor="middle" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="19" font-weight="800" fill="#fff" letter-spacing="1">CFK</text>
+</svg>

@@ -84,14 +84,14 @@ function showLogin() {
     } catch (ex) { err.textContent = ex.message; }
   };
   app.replaceChildren(h("form", { class: "card login", onsubmit: submit },
-    h("h1", {}, "CFKIT"), input, err, h("div", { class: "mt" }, h("button", { class: "pri", type: "submit" }, "Đăng nhập"))));
+    h("h1", { class: "brand" }, h("img", { src: "logo.svg", alt: "CFK", width: "40", height: "40" }), "CFKIT"), input, err, h("div", { class: "mt" }, h("button", { class: "pri", type: "submit" }, "Đăng nhập"))));
 }
 
 // ---------- main view ----------
 async function boot() {
   state.domain = HostUtil.normalizeDomain(loadDomain());
   app.replaceChildren(
-    h("header", {}, h("h1", {}, "CFKIT · Tunnel Manager"), btn("Đăng xuất", logout)),
+    h("header", {}, h("h1", { class: "brand" }, h("img", { src: "logo.svg", alt: "CFK", width: "32", height: "32" }), "CFKIT · Tunnel Manager"), btn("Đăng xuất", logout)),
     h("main", {}, h("div", { id: "env" }), h("div", { class: "tools", id: "tools" }), h("div", { id: "list" })));
   renderTools();
   await Promise.all([loadEnv(), loadTunnels()]);
@@ -160,7 +160,8 @@ async function loadTunnels() {
     h("div", { class: "group" },
       h("h2", {}, `${project} · ${items.length} tunnel`),
       h("div", { class: "card" }, h("table", {},
-        h("tr", {}, ["Tunnel", "Hostnames", "Status", "UUID", "User", "Actions"].map((c) => h("th", {}, c))),
+        h("tr", {}, [["Tunnel", "c-name"], ["Hostnames", "c-hosts"], ["Status", "c-status"], ["UUID", "c-uuid"], ["User", "c-user"], ["Actions", "c-acts"]]
+          .map(([c, cls]) => h("th", { class: cls }, c))),
         items.map(row))))));
 }
 
@@ -331,6 +332,7 @@ async function openLogs(name) {
   }
   const modal = openModal(`Logs · cloudflared-${name}`, pre,
     [h("label", { class: "row" }, follow, "Follow"), btn("Refresh", load), btn("Đóng", () => { clearInterval(timer); closeLayer(); })]);
+  modal.classList.add("wide");
   load();
   return modal;
 }

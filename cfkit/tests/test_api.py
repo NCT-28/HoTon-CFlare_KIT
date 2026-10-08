@@ -204,6 +204,10 @@ def test_static_assets_served_and_index_has_no_inline_script_or_style(client):
     html = client.get("/").text
     assert 'src="app.js"' in html and 'href="style.css"' in html
     assert "<script>" not in html and "style=" not in html
+    assert 'rel="icon"' in html and 'href="logo.svg"' in html
+    logo = client.get("/logo.svg")
+    assert logo.status_code == 200 and logo.headers["content-type"].startswith("image/svg+xml")
+    assert "CFK" in logo.text and "<script" not in logo.text
     assert 'src="hostutil.js"' in html
     assert client.get("/hostutil.js").status_code == 200
     assert client.get("/app.js").status_code == 200
