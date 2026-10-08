@@ -8,7 +8,18 @@ def test_parse_script_output_with_comments():
     uuid, rules, warnings = parse_config(fixture("hotonchat_script.yaml"))
     assert uuid == HOTON_UUID
     assert rules == hoton_rules()
-    assert warnings == []
+    assert len(warnings) == 1 and "comment" in warnings[0]
+
+
+def test_golden_file_has_no_warnings():
+    assert parse_config(fixture("hotonchat.yaml"))[2] == []
+
+
+def test_unknown_top_level_keys_warn():
+    text = f"tunnel: {HOTON_UUID}\ncredentials-file: /c\nprotocol: quic\nloglevel: debug\ningress:\n  - hostname: a.example.com\n    service: http://127.0.0.1:1\n"
+    _, rules, warnings = parse_config(text)
+    assert len(rules) == 1
+    assert any("protocol" in w and "loglevel" in w for w in warnings)
 
 
 def test_roundtrip_golden_is_identical():
@@ -106,3 +117,29 @@ def test_import_candidates_saves_only_new_importable(tmp_path):
     assert saved.uuid == HOTON_UUID and saved.rules == hoton_rules() and saved.user_name == "toannc"
     cands2 = scan(homes, sysd, known={"HotonChat"})
     assert import_candidates(db, cands2) == []
+
+
+def test_scan_warns_when_credentials_file_differs_from_derived_path(tmp_path):
+    text = f"tunnel: {HOTON_UUID}\ncredentials-file: /etc/cloudflared/x.json\ningress:\n  - hostname: a.example.com\n    service: http://127.0.0.1:1\n"
+    homes, sysd = _seed(tmp_path, text=text)
+    [c] = scan(homes, sysd, known=set())
+    assert c.importable and any("credentials-file" in w and "/etc/cloudflared/x.json" in w for w in c.warnings)
+
+
+def test_scan_matching_credentials_file_no_warning(tmp_path):
+    home = tmp_path / "home" / "toannc"
+    text = fixture("hotonchat.yaml").replace("/home/toannc", str(home))
+    homes, sysd = _seed(tmp_path, text=text)
+    [c] = scan(homes, sysd, known=set())
+    assert not any("credentials-file" in w for w in c.warnings)
+
+
+def test_scan_does_not_follow_symlinked_config(tmp_path):
+    homes, sysd = _seed(tmp_path)
+    cfg = tmp_path / "home" / "toannc" / ".cloudflared" / "config-HotonChat.yaml"
+    secret = tmp_path / "secret.yaml"
+    secret.write_text(fixture("hotonchat.yaml"))
+    cfg.unlink()
+    cfg.symlink_to(secret)
+    [c] = scan(homes, sysd, known=set())
+    assert not c.importable and c.error and "read" in c.error

@@ -38,7 +38,7 @@ def settings(tmp_path):
 
 @pytest.fixture
 def manager(settings, fake):
-    return Manager(Database(settings.db_path), Cloudflared(fake, settings.cloudflared_bin), Systemd(fake), fake, settings)
+    return Manager(Database(settings.db_path), Cloudflared(fake, settings.cloudflared_bin), Systemd(fake), fake, settings, settle=0)
 
 
 def make_tunnel(name="Demo", hosts=("a.example.com",), user="toannc", uuid=None):

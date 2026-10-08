@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import difflib
+import grp
 import os
+import pwd
 import re
-import shutil
 import tempfile
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -16,6 +18,7 @@ from app.db import Database
 from app.models import Step, Tunnel, hostnames
 from app.render import render_unit, render_yaml
 from app.runner import CommandError, Runner, tail
+from app.safeio import read_text_nofollow, write_new_file
 from app.svc import Systemd, unit_name
 from app.validate import USER_RE, validate_tunnel
 
@@ -56,8 +59,10 @@ def _fail(name: str, detail: str) -> FlowResult:
 
 
 class Manager:
-    def __init__(self, db: Database, cf: Cloudflared, svc: Systemd, runner: Runner, settings: Settings) -> None:
+    def __init__(self, db: Database, cf: Cloudflared, svc: Systemd, runner: Runner, settings: Settings,
+                 settle: float = 3.0, sleep: Callable[[float], None] = time.sleep) -> None:
         self.db, self.cf, self.svc, self.runner, self.s = db, cf, svc, runner, settings
+        self.settle, self.sleep, self.poll_interval = settle, sleep, 0.5
         self._locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
 
@@ -85,12 +90,43 @@ class Manager:
         finally:
             lock.release()
 
+    def _ids(self, owner: str | None) -> tuple[int, int] | None:
+        if not owner or not self.s.chown:
+            return None
+        return pwd.getpwnam(owner).pw_uid, grp.getgrnam(self.s.group_of(owner)).gr_gid
+
     def _write_file(self, path: Path, text: str, owner: str | None, mode: int = 0o644) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-        os.chmod(path, mode)
-        if owner and self.s.chown:
-            shutil.chown(path, user=owner, group=self.s.group_of(owner))
+        write_new_file(path, text, mode, self._ids(owner))
+
+    @staticmethod
+    def _read_config(path: Path) -> str | None:
+        """Current file text, None if missing; raises OSError for a symlink."""
+        try:
+            return read_text_nofollow(path)
+        except FileNotFoundError:
+            return None
+
+    def _ensure_running(self, name: str) -> None:
+        """Service must be active now and stay active through the settle window (Type=simple
+        reports success on fork, so a crash-looping config would otherwise look fine)."""
+        elapsed = 0.0
+        while True:
+            state = self.svc.is_active(name)
+            if state != "active":
+                raise CommandError(f"service is {state} after start; check Logs")
+            if elapsed >= self.settle:
+                return
+            self.sleep(self.poll_interval)
+            elapsed += self.poll_interval
+
+    def _start_checked(self, name: str) -> None:
+        self.svc.start(name)
+        self._ensure_running(name)
+
+    def _restart_checked(self, name: str) -> None:
+        self.svc.restart(name)
+        self._ensure_running(name)
 
     def _write_atomic(self, path: Path, text: str, owner: str | None) -> None:
         tmp = path.with_name(path.name + ".tmp")
@@ -160,8 +196,10 @@ class Manager:
             new_yaml = ""
         current = ""
         if old:
-            path = self.config_path(old.user_name, old.name)
-            current = path.read_text() if path.exists() else ""
+            try:
+                current = self._read_config(self.config_path(old.user_name, old.name)) or ""
+            except OSError as e:
+                errors.append(f"cannot read current config: {e.strerror or e}")
         diff = "".join(difflib.unified_diff(current.splitlines(True), new_yaml.splitlines(True), "current", "new"))
         before = hostnames(old) if old else []
         after = hostnames(t)
@@ -180,6 +218,11 @@ class Manager:
         return self._locked(t.name, lambda: self._create(t))
 
     def _create(self, t: Tunnel) -> FlowResult:
+        if self.db.get_tunnel(t.name) is not None:
+            return _fail("validate", "name: tunnel already exists")
+        for p in (self.unit_path(t.name), self.config_path(t.user_name, t.name)):
+            if p.exists() or p.is_symlink():
+                return _fail("validate", f"{p} already exists on disk; import it instead of creating it")
         log = StepLog()
         try:
             t.uuid = log.do("tunnel create", self.cf.create, t.name, t.user_name)
@@ -190,9 +233,10 @@ class Manager:
             log.do("write unit", self._write_unit, t)
             log.do("daemon-reload", self.svc.daemon_reload)
             log.do("enable", self.svc.enable, t.name)
-            log.do("start", self.svc.start, t.name)
+            log.do("start", self._start_checked, t.name)
         except Abort:
-            self._rollback_create(t, log)
+            if t.uuid:  # only undo what this flow created
+                self._rollback_create(t, log)
         return FlowResult(log.steps)
 
     def _publish_config(self, t: Tunnel) -> None:
@@ -219,24 +263,25 @@ class Manager:
     # ----- edit -----
 
     def edit(self, name: str, new: Tunnel) -> FlowResult:
-        old = self.db.get_tunnel(name)
+        return self._locked(name, lambda: self._edit(name, new))
+
+    def _edit(self, name: str, new: Tunnel) -> FlowResult:
+        old = self.db.get_tunnel(name)  # read under the lock: it may have been deleted meanwhile
         if old is None:
             return _fail("lookup", "tunnel not found")
         new.name, new.user_name, new.uuid = old.name, old.user_name, old.uuid
         errs = self._check(new, creating=False)
         if errs:
             return _fail("validate", "; ".join(errs))
-        return self._locked(name, lambda: self._edit(old, new))
-
-    def _edit(self, old: Tunnel, new: Tunnel) -> FlowResult:
         log = StepLog()
         path = self.config_path(old.user_name, old.name)
-        prev_text = path.read_text() if path.exists() else None
+        prev_text: str | None = None
         was_active = self.svc.is_active(old.name) == "active"
         added = [h for h in hostnames(new) if h not in hostnames(old)]
         removed = [h for h in hostnames(old) if h not in hostnames(new)]
         replaced = False
         try:
+            prev_text = log.do("read current config", self._read_config, path)
             tmp = log.do("validate config", self._stage_config, new)
             if prev_text is not None:
                 log.do("backup", self.db.add_backup, old.name, prev_text)
@@ -246,7 +291,7 @@ class Manager:
             for h in added:
                 log.do(f"dns {h}", self.cf.route_dns, new.name, h, new.user_name, detail_from_result=True)
             if was_active:
-                log.do("restart", self.svc.restart, new.name)
+                log.do("restart", self._restart_checked, new.name)
         except Abort:
             if replaced:
                 self._restore(old, prev_text, path, was_active, log)
@@ -269,14 +314,14 @@ class Manager:
     # ----- delete -----
 
     def delete(self, name: str, confirm: str) -> FlowResult:
-        t = self.db.get_tunnel(name)
+        return self._locked(name, lambda: self._delete(name, confirm))
+
+    def _delete(self, name: str, confirm: str) -> FlowResult:
+        t = self.db.get_tunnel(name)  # read under the lock
         if t is None:
             return _fail("lookup", "tunnel not found")
         if confirm != name:
             return _fail("confirm", "confirmation does not match the tunnel name")
-        return self._locked(name, lambda: self._delete(t))
-
-    def _delete(self, t: Tunnel) -> FlowResult:
         log = StepLog()
         try:
             log.do("stop", self._quiet, self.svc.stop, t.name)

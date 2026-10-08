@@ -256,3 +256,135 @@ def test_update_cloudflared_unsupported_arch_fails(manager, fake):
     fake.when_has("--print-architecture", result=Result(0, "riscv64\n", ""))
     res = manager.update_cloudflared("2025.9.0", True)
     assert not res.ok and not fake.has_call("dpkg", "-i")
+
+
+# ---------- final-review fixes ----------
+
+def test_create_refuses_when_unit_or_config_already_on_disk(manager, fake):
+    unit = manager.unit_path("Demo")
+    cfg = manager.config_path("toannc", "Demo")
+    unit.parent.mkdir(parents=True)
+    cfg.parent.mkdir(parents=True)
+    unit.write_text("LIVE-UNIT")
+    cfg.write_text("LIVE-CFG")
+    res = manager.create(make_tunnel())
+    assert not res.ok and fake.calls == []
+    assert unit.read_text() == "LIVE-UNIT" and cfg.read_text() == "LIVE-CFG"
+
+
+def test_create_failing_at_tunnel_create_never_touches_services(manager, fake):
+    fake.when_has("tunnel", "create", result=Result(1, "", "tunnel with name Demo already exists"))
+    res = manager.create(make_tunnel())
+    assert not res.ok and names(res) == ["tunnel create"]
+    assert not fake.has_call("systemctl")
+
+
+def test_create_rechecks_duplicate_name_inside_the_lock(manager, fake):
+    seed(manager, make_tunnel())
+    fake.calls.clear()
+    res = manager._create(make_tunnel())
+    assert not res.ok and fake.calls == []
+    assert manager.db.get_tunnel("Demo") is not None
+
+
+def test_edit_does_not_follow_symlink_planted_at_staging_path(manager, tmp_path):
+    seed(manager, make_tunnel())
+    cfg = manager.config_path("toannc", "Demo")
+    victim = tmp_path / "victim"
+    victim.write_text("secret")
+    cfg.with_name(cfg.name + ".new").symlink_to(victim)
+    res = manager.edit("Demo", make_tunnel(hosts=("a.example.com", "z.example.com")))
+    assert res.ok, res.steps
+    assert victim.read_text() == "secret"
+
+
+def test_preview_does_not_read_through_symlinked_config(manager, tmp_path):
+    seed(manager, make_tunnel())
+    cfg = manager.config_path("toannc", "Demo")
+    secret = tmp_path / "root-only"
+    secret.write_text("ROOT-SECRET-CONTENT\n")
+    cfg.unlink()
+    cfg.symlink_to(secret)
+    p = manager.preview("Demo", make_tunnel())
+    assert "ROOT-SECRET-CONTENT" not in p["diff"]
+    assert any("cannot read" in e for e in p["errors"])
+
+
+def test_edit_does_not_resurrect_a_tunnel_deleted_before_it_got_the_lock(manager, fake):
+    seed(manager, make_tunnel())
+    orig = manager._locked
+    fired = []
+
+    def hook(name, fn):
+        if not fired:
+            fired.append(1)
+            assert manager.delete("Demo", "Demo").ok
+        return orig(name, fn)
+
+    manager._locked = hook
+    res = manager.edit("Demo", make_tunnel(hosts=("a.example.com", "z.example.com")))
+    assert not res.ok
+    assert manager.db.get_tunnel("Demo") is None
+    assert not manager.config_path("toannc", "Demo").exists()
+
+
+def test_delete_after_concurrent_delete_reports_not_found(manager):
+    seed(manager, make_tunnel())
+    orig = manager._locked
+    fired = []
+
+    def hook(name, fn):
+        if not fired:
+            fired.append(1)
+            assert manager.delete("Demo", "Demo").ok
+        return orig(name, fn)
+
+    manager._locked = hook
+    assert not manager.delete("Demo", "Demo").ok
+
+
+def test_edit_detects_crash_loop_after_restart_and_restores(manager, fake):
+    seed(manager, make_tunnel(hosts=("a.example.com",)))
+    cfg = manager.config_path("toannc", "Demo")
+    before = cfg.read_text()
+    calls = {"n": 0}
+
+    def is_active(args):
+        calls["n"] += 1
+        return Result(0, "active\n" if calls["n"] == 1 else "activating\n", "")
+
+    fake.when_has("is-active", result=is_active)
+    res = manager.edit("Demo", make_tunnel(hosts=("a.example.com", "z.example.com")))
+    assert not res.ok
+    failed = next(s for s in res.steps if not s.ok)
+    assert failed.name == "restart" and "activating" in failed.detail
+    assert res.steps[-1].name == "restore previous config"
+    assert cfg.read_text() == before
+    assert [r.hostname for r in manager.db.get_tunnel("Demo").rules] == ["a.example.com"]
+
+
+def test_create_rolls_back_when_service_is_not_active_after_start(manager, fake):
+    fake.when_has("is-active", result=Result(3, "failed\n", ""))
+    res = manager.create(make_tunnel())
+    assert not res.ok
+    assert next(s for s in res.steps if not s.ok).name == "start"
+    assert res.steps[-1].name == "rollback"
+    assert manager.db.get_tunnel("Demo") is None
+    assert not manager.config_path("toannc", "Demo").exists()
+
+
+def test_service_must_stay_active_through_the_settle_window(manager, fake):
+    slept = []
+    manager.settle, manager.poll_interval, manager.sleep = 1.0, 0.5, slept.append
+    seen = {"n": 0}
+
+    def is_active(args):
+        seen["n"] += 1
+        return Result(0, "active\n" if seen["n"] < 3 else "failed\n", "")
+
+    fake.when_has("is-active", result=is_active)
+    import pytest as _pytest
+    from app.runner import CommandError
+    with _pytest.raises(CommandError, match="failed"):
+        manager._ensure_running("Demo")
+    assert slept == [0.5, 0.5]

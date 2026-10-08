@@ -8,10 +8,13 @@ import yaml
 
 from app.db import Database
 from app.models import Rule, Tunnel
+from app.safeio import read_text_nofollow
 from app.validate import NAME_RE, validate_tunnel
 
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 KNOWN_ORIGIN_KEYS = {"httpHostHeader", "noTLSVerify"}
+KNOWN_TOP_LEVEL_KEYS = {"tunnel", "credentials-file", "ingress"}
+COMMENT_RE = re.compile(r"(^|\s)#", re.MULTILINE)
 
 
 @dataclass
@@ -36,6 +39,11 @@ def parse_config(text: str) -> tuple[str | None, list[Rule], list[str]]:
     uuid = str(data["tunnel"]) if data.get("tunnel") else None
     rules: list[Rule] = []
     warnings: list[str] = []
+    dropped = sorted(str(k) for k in set(data) - KNOWN_TOP_LEVEL_KEYS)
+    if dropped:
+        warnings.append(f"unsupported top-level keys will be dropped on next Apply: {dropped}")
+    if COMMENT_RE.search(text):
+        warnings.append("comments in the file are not preserved on next Apply")
     for i, item in enumerate(data.get("ingress") or [], 1):
         if not isinstance(item, dict):
             warnings.append(f"ingress #{i}: not a mapping, skipped")
@@ -57,6 +65,12 @@ def parse_config(text: str) -> tuple[str | None, list[Rule], list[str]]:
     return uuid, rules, warnings
 
 
+def parse_credentials_file(text: str) -> str | None:
+    data = yaml.safe_load(text) or {}
+    value = data.get("credentials-file") if isinstance(data, dict) else None
+    return str(value) if value else None
+
+
 def parse_unit_user(text: str) -> str | None:
     m = re.search(r"^User=(\S+)\s*$", text, re.MULTILINE)
     return m.group(1) if m else None
@@ -75,7 +89,13 @@ def scan(homes: dict[str, Path], systemd_dir: Path, known: set[str]) -> list[Can
                 out.append(cand)
                 continue
             try:
-                cand.uuid, cand.rules, cand.warnings = parse_config(p.read_text())
+                text = read_text_nofollow(p)
+            except OSError as e:
+                cand.error = f"cannot read config: {e.strerror or e}"
+                out.append(cand)
+                continue
+            try:
+                cand.uuid, cand.rules, cand.warnings = parse_config(text)
             except yaml.YAMLError as e:
                 cand.error = f"invalid YAML: {e}".splitlines()[0]
                 out.append(cand)
@@ -86,6 +106,13 @@ def scan(homes: dict[str, Path], systemd_dir: Path, known: set[str]) -> list[Can
                 cand.error = "no usable ingress rules"
             else:
                 cand.warnings += validate_tunnel(Tunnel(name, user, cand.rules))
+                cred = parse_credentials_file(text)
+                expected = str(homes.get(user, home) / ".cloudflared" / f"{cand.uuid}.json")
+                if cred and cred != expected:
+                    cand.warnings.append(
+                        f"credentials-file {cred} will be replaced by {expected} on next Apply; "
+                        "make sure the credentials JSON is there"
+                    )
             out.append(cand)
     return out
 
