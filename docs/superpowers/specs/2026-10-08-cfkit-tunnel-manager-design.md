@@ -103,8 +103,17 @@ Single page, plain HTML/JS served by FastAPI.
 - **Apply progress:** per-step ✓/✗ shown live.
 - **Logs modal:** last 200 lines, refresh, follow toggle.
 - **Delete modal:** type tunnel name; lists leftover DNS hostnames.
-- **Banners:** missing `cert.pem` (show headless login instructions from the existing scripts;
-  the web does not run interactive login) and missing `cloudflared` (install command).
+- **Environment panel** (top of list, `GET /api/env`): shows
+  - `cloudflared` installed?, binary path (`command -v`, fallback `/usr/bin/cloudflared`);
+  - installed version (`cloudflared --version`);
+  - latest version + "update available" badge (GitHub releases `latest`, cached 6h, fetched
+    server-side; failure shows "không kiểm tra được" and never blocks other features);
+  - `cert.pem` presence per distinct `user_name` among tunnels (`{home}/.cloudflared/cert.pem`);
+  - "Check lại" button forces refresh.
+  Actions: **Update…** (modal shows the exact commands; options "install only" or "install +
+  restart all tunnels sequentially"; dpkg-based, same as the scripts) and **Fix cert.pem…**
+  (modal with the headless instructions from the existing scripts; the web never runs the
+  interactive `cloudflared login`). A missing binary shows the same install flow as Update.
 
 ## 7. Auth and security
 

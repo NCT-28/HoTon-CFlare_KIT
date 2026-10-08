@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CFKit — UI mockup (throwaway)</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1c2230;--mute:#6b7385;--line:#e3e6ec;--acc:#f6821f;--accfg:#fff;--ok:#1a9d55;--okbg:#e4f6ec;--bad:#d6334a;--badbg:#fde8eb;--idle:#7a8294;--idlebg:#eceef2;--code:#10151f;--codefg:#d7e0f2;--add:#173a26;--del:#43202a}
+@media(prefers-color-scheme:dark){:root{--bg:#0f131b;--card:#171c27;--fg:#e6e9f0;--mute:#8d96aa;--line:#262d3c;--okbg:#10301f;--badbg:#3a1820;--idlebg:#222836}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 24px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:16px;margin:0;flex:1}
+header h1 span{color:var(--acc)}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:6px 12px;border-radius:6px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.pri{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+button.danger{color:var(--bad)}
+button.sm{padding:3px 8px;font-size:12px}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+input[type=checkbox]{width:auto}
+main{padding:20px 24px;max-width:1200px;margin:auto}
+.banner{background:#fff4e0;color:#7a4a00;border:1px solid #f1d29b;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:center}
+@media(prefers-color-scheme:dark){.banner{background:#33270f;color:#f3d79b;border-color:#5a4417}}
+.env{display:grid;grid-template-columns:repeat(4,auto);gap:16px 28px;padding:12px 16px;margin-bottom:16px;overflow:visible}
+.env label{margin-bottom:2px}.envact{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.b-warn{color:#a15c00;background:#fff1d6}
+@media(prefers-color-scheme:dark){.b-warn{color:#f3c677;background:#3a2c10}}
+@media(max-width:800px){.env{grid-template-columns:1fr 1fr}}
+.tools{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.tools input{max-width:260px}
+.group{margin-bottom:22px}
+.group h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:760px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+th{font-size:12px;color:var(--mute);font-weight:600}
+.chip{display:inline-block;background:var(--idlebg);border-radius:999px;padding:1px 9px;font-size:12px;margin:1px 3px 1px 0}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.b-ok{color:var(--ok);background:var(--okbg)}.b-bad{color:var(--bad);background:var(--badbg)}.b-idle{color:var(--idle);background:var(--idlebg)}
+.mono{font-family:ui-monospace,monospace;font-size:12px;color:var(--mute)}
+.acts{display:flex;gap:4px;flex-wrap:wrap}
+/* side panel */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:5}
+.overlay.on{display:block}
+.panel{position:fixed;top:0;right:0;bottom:0;width:min(760px,100%);background:var(--card);box-shadow:-8px 0 30px rgba(0,0,0,.25);display:none;flex-direction:column;z-index:6}
+.panel.on{display:flex}
+.panel header{border-bottom:1px solid var(--line)}
+.pbody{padding:18px 24px;overflow:auto;flex:1}
+.pfoot{padding:12px 24px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.pfoot .msg{flex:1;color:var(--ok);font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+label{display:block;font-size:12px;color:var(--mute);margin-bottom:3px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.tab{padding:7px 14px;cursor:pointer;border-bottom:2px solid transparent;color:var(--mute)}
+.tab.on{color:var(--fg);border-color:var(--acc)}
+.rules td,.rules th{padding:6px 6px}
+.rules table{min-width:640px}
+.rules .fixed td{color:var(--mute);background:var(--bg)}
+.drag{cursor:grab;color:var(--mute)}
+pre{background:var(--code);color:var(--codefg);border-radius:8px;padding:12px 14px;overflow:auto;font-size:12px;line-height:1.5;margin:0}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.steps{list-style:none;padding:0;margin:14px 0 0}
+.steps li{padding:3px 0;font-size:13px}
+.steps .ok::before{content:"✓ ";color:var(--ok)}.steps .run::before{content:"… ";color:var(--acc)}
+/* modal */
+.modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(620px,92%);background:var(--card);border-radius:12px;padding:20px;display:none;z-index:8;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.modal.on{display:block}
+.modal h3{margin:0 0 10px}
+.note{color:var(--mute);font-size:13px}
+.ribbon{position:fixed;bottom:10px;left:10px;background:var(--code);color:var(--codefg);font-size:11px;padding:4px 10px;border-radius:6px;opacity:.85}
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>CF</span>KIT <span style="color:var(--mute);font-weight:400">· Tunnel Manager</span></h1>
+  <span class="mono">127.0.0.1:8787</span>
+  <button>Đăng xuất</button>
+</header>
+
+<main>
+  <div class="card env">
+    <div><label>cloudflared</label><b>✓ đã cài</b><div class="mono">/usr/bin/cloudflared</div></div>
+    <div><label>Version</label><b>2025.8.1</b><div><span class="badge b-warn">có bản mới 2025.9.0</span></div></div>
+    <div><label>cert.pem</label>
+      <div><span class="badge b-ok">toannc</span> <span class="badge b-bad">root · thiếu</span></div>
+      <div class="mono">~/.cloudflared/cert.pem</div></div>
+    <div class="envact">
+      <button class="sm" onclick="show('m-update')">Update…</button>
+      <button class="sm" onclick="show('m-cert')">Fix cert.pem…</button>
+      <button class="sm">Check lại</button>
+      <div class="mono">check lần cuối 2 phút trước</div></div>
+  </div>
+
+  <div class="tools">
+    <button class="pri" onclick="openPanel('new')">+ New tunnel</button>
+    <button onclick="show('m-import')">Import existing</button>
+    <button>Refresh</button>
+    <input placeholder="Lọc theo tên / hostname / project…" style="margin-left:auto">
+  </div>
+
+  <div class="group">
+    <h2>HoTon-Chat · 1 tunnel</h2>
+    <div class="card"><table>
+      <tr><th>Tunnel</th><th>Hostnames</th><th>Status</th><th>UUID</th><th>User</th><th>Actions</th></tr>
+      <tr>
+        <td><b>HotonChat</b><div class="note">8 rules · ws, api, rsocket, avatars…</div></td>
+        <td><span class="chip">f1p.info.vn</span></td>
+        <td><span class="badge b-ok">active</span></td>
+        <td class="mono">3f9a21c0…</td><td>toannc</td>
+        <td><div class="acts">
+          <button class="sm" disabled title="đang chạy">Run</button><button class="sm">Stop</button><button class="sm">Restart</button>
+          <button class="sm" onclick="openPanel('edit')">Edit</button><button class="sm" onclick="show('m-logs')">Logs</button>
+          <button class="sm danger" onclick="show('m-del')">Delete</button></div></td>
+      </tr>
+    </table></div>
+  </div>
+
+  <div class="group">
+    <h2>Silo · 2 tunnels</h2>
+    <div class="card"><table>
+      <tr><th>Tunnel</th><th>Hostnames</th><th>Status</th><th>UUID</th><th>User</th><th>Actions</th></tr>
+      <tr>
+        <td><b>SiloS3</b><div class="note">MinIO S3 API + console</div></td>
+        <td><span class="chip">s3.f1p.info.vn</span><span class="chip">silo-api.f1p.info.vn</span></td>
+        <td><span class="badge b-ok">active</span></td>
+        <td class="mono">b71e04d8…</td><td>root</td>
+        <td><div class="acts">
+          <button class="sm" disabled>Run</button><button class="sm">Stop</button><button class="sm">Restart</button>
+          <button class="sm" onclick="openPanel('edit')">Edit</button><button class="sm" onclick="show('m-logs')">Logs</button>
+          <button class="sm danger" onclick="show('m-del')">Delete</button></div></td>
+      </tr>
+      <tr>
+        <td><b>SiloBackup</b><div class="note">chưa chạy</div></td>
+        <td><span class="chip">backup.f1p.info.vn</span></td>
+        <td><span class="badge b-idle">inactive</span></td>
+        <td class="mono">c20d9e11…</td><td>root</td>
+        <td><div class="acts">
+          <button class="sm">Run</button><button class="sm" disabled>Stop</button><button class="sm" disabled>Restart</button>
+          <button class="sm" onclick="openPanel('edit')">Edit</button><button class="sm" onclick="show('m-logs')">Logs</button>
+          <button class="sm danger" onclick="show('m-del')">Delete</button></div></td>
+      </tr>
+    </table></div>
+  </div>
+
+  <div class="group">
+    <h2>(không có project) · 1 tunnel</h2>
+    <div class="card"><table>
+      <tr><th>Tunnel</th><th>Hostnames</th><th>Status</th><th>UUID</th><th>User</th><th>Actions</th></tr>
+      <tr>
+        <td><b>n8n</b></td><td><span class="chip">n8n.f1p.info.vn</span></td>
+        <td><span class="badge b-bad">failed</span></td>
+        <td class="mono">8aa0f3b2…</td><td>toannc</td>
+        <td><div class="acts">
+          <button class="sm">Run</button><button class="sm">Stop</button><button class="sm">Restart</button>
+          <button class="sm" onclick="openPanel('edit')">Edit</button><button class="sm" onclick="show('m-logs')">Logs</button>
+          <button class="sm danger" onclick="show('m-del')">Delete</button></div></td>
+      </tr>
+    </table></div>
+  </div>
+</main>
+
+<!-- Side panel: create / edit -->
+<div class="overlay" id="ov" onclick="closeAll()"></div>
+<aside class="panel" id="panel">
+  <header><h1 id="ptitle">Edit tunnel · HotonChat</h1><button onclick="closeAll()">✕</button></header>
+  <div class="pbody">
+    <div class="grid">
+      <div><label>Name <span id="lock">🔒 khóa sau khi tạo</span></label><input id="f-name" value="HotonChat"></div>
+      <div><label>Service user</label><select><option>toannc</option><option>root</option></select></div>
+      <div><label>Project (tag)</label><input value="HoTon-Chat"></div>
+      <div><label>Note</label><input value="Chat prod, ws + api"></div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab on" data-t="t-rules">Rules</div>
+      <div class="tab" data-t="t-prev">Preview YAML</div>
+      <div class="tab" data-t="t-diff">Diff vs hiện tại</div>
+    </div>
+
+    <div id="t-rules" class="tabc rules card" style="border:0">
+      <table>
+        <tr><th></th><th>Hostname</th><th>Path</th><th>Service</th><th>Host header</th><th>noTLS</th><th></th></tr>
+        <tr><td class="drag">⋮⋮</td><td><input value="f1p.info.vn"></td><td><input value="/api*"></td><td><input value="http://127.0.0.1:5500"></td><td><input></td><td><input type="checkbox"></td><td><button class="sm danger">✕</button></td></tr>
+        <tr><td class="drag">⋮⋮</td><td><input value="f1p.info.vn"></td><td><input value="/ws*"></td><td><input value="http://127.0.0.1:5500"></td><td><input></td><td><input type="checkbox" checked></td><td><button class="sm danger">✕</button></td></tr>
+        <tr><td class="drag">⋮⋮</td><td><input value="f1p.info.vn"></td><td><input value="/hoton-chat*"></td><td><input value="http://127.0.0.1:5507"></td><td><input value="localhost:5507"></td><td><input type="checkbox"></td><td><button class="sm danger">✕</button></td></tr>
+        <tr><td class="drag">⋮⋮</td><td><input value="f1p.info.vn"></td><td><input placeholder="(mọi path)"></td><td><input value="http://127.0.0.1:5501"></td><td><input></td><td><input type="checkbox"></td><td><button class="sm danger">✕</button></td></tr>
+        <tr class="fixed"><td>🔒</td><td colspan="2">(catch-all, tự động)</td><td colspan="4">http_status:404</td></tr>
+      </table>
+      <div style="padding:8px 6px"><button class="sm">+ Add rule</button> <span class="note">· kéo ⋮⋮ để đổi thứ tự (thứ tự quan trọng)</span></div>
+    </div>
+
+    <div id="t-prev" class="tabc" style="display:none"><pre>tunnel: 3f9a21c0-…-a1b2c3d4e5f6
+credentials-file: /home/toannc/.cloudflared/3f9a21c0-….json
+
+ingress:
+  - hostname: f1p.info.vn
+    path: /api*
+    service: http://127.0.0.1:5500
+  - hostname: f1p.info.vn
+    path: /ws*
+    service: http://127.0.0.1:5500
+    originRequest:
+      noTLSVerify: true
+  - hostname: f1p.info.vn
+    path: /hoton-chat*
+    service: http://127.0.0.1:5507
+    originRequest:
+      httpHostHeader: "localhost:5507"
+  - hostname: f1p.info.vn
+    service: http://127.0.0.1:5501
+  - service: http_status:404</pre>
+      <p class="note">✓ cloudflared tunnel ingress validate: OK</p></div>
+
+    <div id="t-diff" class="tabc" style="display:none"><pre><span class="add">+ - hostname: f1p.info.vn</span><span class="add">+   path: /hoton-chat*</span><span class="add">+   service: http://127.0.0.1:5507</span>  - hostname: f1p.info.vn
+    service: http://127.0.0.1:5501
+<span class="del">-   service: http://127.0.0.1:5500   (rule cũ /rsocket*)</span>  - service: http_status:404</pre>
+      <p class="note">Hostname mới: <b>không có</b> → không cần route DNS. Hostname bị gỡ: <b>không có</b>.</p></div>
+
+    <ul class="steps" id="steps" style="display:none">
+      <li class="ok">Validate rules</li><li class="ok">Backup config cũ</li>
+      <li class="ok">Ghi config-HotonChat.yaml</li><li class="run">Restart cloudflared-HotonChat.service</li>
+    </ul>
+  </div>
+  <div class="pfoot">
+    <span class="msg" id="pmsg"></span>
+    <button onclick="closeAll()">Cancel</button>
+    <button class="pri" onclick="apply()">Apply</button>
+  </div>
+</aside>
+
+<!-- Logs modal -->
+<div class="modal" id="m-logs">
+  <h3>Logs · cloudflared-HotonChat <span class="note">(200 dòng cuối)</span></h3>
+  <pre style="max-height:280px">Oct 08 09:12:01 cloudflared[812]: INF Registered tunnel connection connIndex=0 location=sgn
+Oct 08 09:12:01 cloudflared[812]: INF Registered tunnel connection connIndex=1 location=hkg
+Oct 08 09:12:02 cloudflared[812]: INF Registered tunnel connection connIndex=2 location=sgn
+Oct 08 09:44:17 cloudflared[812]: WRN Unable to reach origin 127.0.0.1:5507 (conn refused)</pre>
+  <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+    <label style="margin:0"><input type="checkbox"> Follow</label><button>Refresh</button><button onclick="closeAll()">Đóng</button></div>
+</div>
+
+<!-- Delete modal -->
+<div class="modal" id="m-del">
+  <h3>Xóa tunnel «HotonChat»?</h3>
+  <p class="note">Sẽ: stop + disable service, xóa unit/YAML/credentials, <code>tunnel delete</code>.<br>
+  DNS <b>không</b> tự xóa — xóa tay trong Cloudflare dashboard:</p>
+  <p><span class="chip">f1p.info.vn</span></p>
+  <label>Gõ <b>HotonChat</b> để xác nhận</label><input id="confirm" oninput="document.getElementById('delbtn').disabled=this.value!=='HotonChat'">
+  <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+    <button onclick="closeAll()">Cancel</button><button class="pri danger" id="delbtn" disabled style="background:var(--bad);color:#fff;border-color:var(--bad)">Delete</button></div>
+</div>
+
+<!-- Update modal -->
+<div class="modal" id="m-update">
+  <h3>Update cloudflared</h3>
+  <p class="note">Hiện tại <b>2025.8.1</b> → mới nhất <b>2025.9.0</b> (GitHub releases). Lệnh sẽ chạy:</p>
+  <pre>curl -Lo /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/download/2025.9.0/cloudflared-linux-amd64.deb
+dpkg -i /tmp/cloudflared.deb
+systemctl restart cloudflared-*   # restart lần lượt từng tunnel</pre>
+  <p class="note">⚠ Mỗi tunnel mất kết nối vài giây khi restart. Có thể chọn "chỉ cài, restart sau".</p>
+  <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+    <button onclick="closeAll()">Cancel</button><button>Chỉ cài</button><button class="pri" onclick="closeAll()">Cài + restart tất cả</button></div>
+</div>
+
+<!-- cert modal -->
+<div class="modal" id="m-cert">
+  <h3>Thiếu cert.pem cho user «root»</h3>
+  <p class="note">Server không có browser. Chọn 1 cách:</p>
+  <p><b>1)</b> Trên máy có browser: <code>cloudflared login</code> rồi <code>scp ~/.cloudflared/cert.pem root@IP:/root/.cloudflared/cert.pem</code></p>
+  <p><b>2)</b> Chạy <code>cloudflared login</code> trong terminal SSH của server, mở URL hiện ra trên browser.</p>
+  <p class="note">CFKit không tự chạy login (cần tương tác). Bấm "Check lại" sau khi xong.</p>
+  <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+    <button onclick="closeAll()">Đóng</button><button class="pri" onclick="closeAll()">Check lại</button></div>
+</div>
+
+<!-- Import modal -->
+<div class="modal" id="m-import">
+  <h3>Import tunnel có sẵn</h3>
+  <p class="note">Quét <code>~/.cloudflared/config-*.yaml</code>. Chỉ ghi vào DB của CFKit, không đụng file/service.</p>
+  <div class="card"><table style="min-width:0">
+    <tr><td><input type="checkbox" checked></td><td><b>HotonChat</b></td><td class="note">8 rules · user toannc</td><td><span class="badge b-ok">mới</span></td></tr>
+    <tr><td><input type="checkbox" checked></td><td><b>SiloS3</b></td><td class="note">2 rules · user root</td><td><span class="badge b-ok">mới</span></td></tr>
+    <tr style="opacity:.5"><td><input type="checkbox" disabled></td><td><b>n8n</b></td><td class="note">đã có trong DB</td><td><span class="badge b-idle">bỏ qua</span></td></tr>
+  </table></div>
+  <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+    <button onclick="closeAll()">Cancel</button><button class="pri" onclick="closeAll()">Import 2</button></div>
+</div>
+
+<div class="ribbon">MOCKUP — throwaway, không phải code sản phẩm</div>
+
+<script>
+const $=id=>document.getElementById(id);
+function closeAll(){document.querySelectorAll('.panel,.modal,.overlay').forEach(e=>e.classList.remove('on'));$('steps').style.display='none';$('pmsg').textContent=''}
+function show(id){$('ov').classList.add('on');$(id).classList.add('on')}
+function openPanel(mode){
+  $('ptitle').textContent = mode==='new' ? 'New tunnel' : 'Edit tunnel · HotonChat';
+  $('f-name').value = mode==='new' ? '' : 'HotonChat';
+  $('f-name').disabled = mode!=='new';
+  $('lock').style.display = mode==='new' ? 'none' : 'inline';
+  show('panel');
+}
+function apply(){ $('steps').style.display='block'; $('pmsg').textContent='Đang apply…'; setTimeout(()=>$('pmsg').textContent='✓ Applied (UUID + DNS giữ nguyên)',700) }
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+  document.querySelectorAll('.tabc').forEach(c=>c.style.display=c.id===t.dataset.t?'':'none');
+});
+</script>
+</body>
+</html>
