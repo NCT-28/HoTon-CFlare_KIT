@@ -1,0 +1,42 @@
+# File cấu hình được tạo tự động cho tunnel HotonChat
+# Lưu ý: tunnel ID và credentials-file khác với tunnel n8n
+tunnel: 3f9a21c0-1b2c-4d3e-8f4a-a1b2c3d4e5f6
+credentials-file: /home/toannc/.cloudflared/3f9a21c0-1b2c-4d3e-8f4a-a1b2c3d4e5f6.json
+
+ingress:
+  - hostname: f1p.info.vn
+    path: /api*
+    service: http://127.0.0.1:5500
+  - hostname: f1p.info.vn
+    path: /rsocket*
+    service: http://127.0.0.1:5500
+    originRequest:
+      noTLSVerify: true
+  - hostname: f1p.info.vn
+    path: /ws*
+    service: http://127.0.0.1:5500
+    originRequest:
+      noTLSVerify: true
+  - hostname: f1p.info.vn
+    path: /hoton-avatars*
+    service: http://127.0.0.1:5507
+    originRequest:
+      httpHostHeader: "localhost:5507"   # ← localhost vì cloudflared chạy trực tiếp trên host
+  - hostname: f1p.info.vn
+    path: /hoton-chat*
+    service: http://127.0.0.1:5507
+    originRequest:
+      httpHostHeader: "localhost:5507"
+  - hostname: f1p.info.vn
+    path: /hoton-blog*
+    service: http://127.0.0.1:5507
+    originRequest:
+      httpHostHeader: "localhost:5507"
+  - hostname: f1p.info.vn
+    path: /hoton-feeds*
+    service: http://127.0.0.1:5507
+    originRequest:
+      httpHostHeader: "localhost:5507"
+  - hostname: f1p.info.vn
+    service: http://127.0.0.1:5501
+  - service: http_status:404

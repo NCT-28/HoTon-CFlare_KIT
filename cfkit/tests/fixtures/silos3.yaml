@@ -1,0 +1,11 @@
+tunnel: b71e04d8-5a6f-4c7d-9e8f-0123456789ab
+credentials-file: /root/.cloudflared/b71e04d8-5a6f-4c7d-9e8f-0123456789ab.json
+
+ingress:
+  - hostname: s3.f1p.info.vn
+    service: http://127.0.0.1:5507
+    originRequest:
+      httpHostHeader: "localhost:5507"
+  - hostname: silo-api.f1p.info.vn
+    service: http://127.0.0.1:5508
+  - service: http_status:404
