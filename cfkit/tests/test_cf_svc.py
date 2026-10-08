@@ -67,6 +67,8 @@ def test_delete_uses_force_and_tolerates_missing_tunnel():
     assert f.calls[0][0] == [BIN, "tunnel", "delete", "-f", "T"]
     f.when_has("delete", result=Result(1, "", "Tunnel T not found"))
     cf(f).delete("T", "root")
+    f.when_has("delete", result=Result(1, "", f"Tunnel {UUID} has already been deleted"))
+    cf(f).delete(UUID, "root")
     f.when_has("delete", result=Result(1, "", "connection refused"))
     with pytest.raises(CommandError):
         cf(f).delete("T", "root")
@@ -113,3 +115,9 @@ def test_logs_command():
 
 def test_unit_name():
     assert unit_name("HotonChat") == "cloudflared-HotonChat.service"
+
+
+def test_route_dns_overwrite_adds_flag_before_positionals():
+    f = FakeRunner()
+    cf(f).route_dns(UUID, "a.example.com", "root", overwrite=True)
+    assert f.calls[0][0] == [BIN, "tunnel", "route", "dns", "--overwrite-dns", UUID, "a.example.com"]

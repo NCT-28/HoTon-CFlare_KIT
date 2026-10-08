@@ -60,7 +60,7 @@ def test_create_failure_rolls_back_everything(manager, fake, settings):
     assert not manager.config_path("toannc", "Demo").exists()
     assert not manager.unit_path("Demo").exists()
     assert manager.db.get_tunnel("Demo") is None
-    assert fake.has_call("tunnel", "delete", "Demo")
+    assert fake.has_call("tunnel", "delete", UUID)
 
 
 def test_create_failure_before_tunnel_exists_skips_cloudflare_delete(manager, fake):
@@ -88,7 +88,7 @@ def test_edit_adds_rule_only_routes_new_hostname_and_keeps_uuid(manager, fake):
     assert res.ok, res.steps
     assert not fake.has_call("tunnel", "create") and not fake.has_call("tunnel", "delete")
     routes = [a for a in fake.argv() if "route" in a]
-    assert len(routes) == 1 and "c.example.com" in routes[0]
+    assert len(routes) == 1 and "c.example.com" in routes[0] and UUID in routes[0]
     assert fake.has_call("systemctl", "restart", "cloudflared-Demo.service")
     saved = manager.db.get_tunnel("Demo")
     assert saved.uuid == UUID and [r.hostname for r in saved.rules] == ["a.example.com", "c.example.com"]
@@ -168,7 +168,7 @@ def test_delete_removes_files_db_and_reports_leftover_dns(manager, fake):
     assert res.data["leftover_dns"] == ["a.example.com", "b.example.com"]
     assert not manager.config_path("toannc", "Demo").exists() and not manager.unit_path("Demo").exists()
     assert manager.db.get_tunnel("Demo") is None
-    assert fake.has_call("tunnel", "delete", "Demo")
+    assert fake.has_call("tunnel", "delete", UUID)
 
 
 def test_delete_is_idempotent_when_files_already_missing(manager):
@@ -388,3 +388,82 @@ def test_service_must_stay_active_through_the_settle_window(manager, fake):
     with _pytest.raises(CommandError, match="failed"):
         manager._ensure_running("Demo")
     assert slept == [0.5, 0.5]
+
+
+def test_delete_by_uuid_survives_duplicate_tunnel_names_in_cloudflare(manager, fake):
+    seed(manager, make_tunnel())
+    fake.when_has("tunnel", "delete", "Demo", result=Result(1, "", "there should only be 1 non-deleted Tunnel named Demo"))
+    res = manager.delete("Demo", "Demo")
+    assert res.ok, res.steps
+    assert fake.has_call("tunnel", "delete", UUID) and not fake.has_call("tunnel", "delete", "Demo")
+    assert manager.db.get_tunnel("Demo") is None
+
+
+def test_create_routes_dns_by_uuid(manager, fake):
+    assert manager.create(make_tunnel()).ok
+    route = next(a for a in fake.argv() if "route" in a)
+    assert UUID in route and "Demo" not in route
+
+
+# ---------- retunnel ----------
+
+UUID2 = "99999999-8888-4777-8666-555555555555"
+
+
+def _new_id(fake):
+    fake.when_has("tunnel", "create", result=Result(0, "", f"Created tunnel Demo with id {UUID2}"))
+
+
+def test_retunnel_replaces_id_and_keeps_name_rules_and_service(manager, fake, settings):
+    seed(manager, make_tunnel(hosts=("a.example.com", "b.example.com")))
+    old_cred = manager.cred_path("toannc", UUID)
+    old_cred.write_text("{}")
+    _new_id(fake)
+    fake.calls.clear()
+    res = manager.retunnel("Demo")
+    assert res.ok, res.steps
+    assert res.data == {"old_uuid": UUID, "new_uuid": UUID2}
+
+    argv = fake.argv()
+    idx = lambda *tok: next(i for i, a in enumerate(argv) if all(x in a for x in tok))
+    assert idx("stop") < idx("tunnel", "delete", UUID) < idx("tunnel", "create") \
+        < idx("route", "a.example.com") < idx("ingress", "validate") < idx("start")
+    routes = [a for a in argv if "route" in a]
+    assert len(routes) == 2 and all("--overwrite-dns" in a and UUID2 in a for a in routes)
+
+    assert manager.db.get_tunnel("Demo").uuid == UUID2
+    cfg = manager.config_path("toannc", "Demo").read_text()
+    assert f"tunnel: {UUID2}" in cfg and UUID not in cfg
+    assert not old_cred.exists()
+    assert [r.hostname for r in manager.db.get_tunnel("Demo").rules] == ["a.example.com", "b.example.com"]
+
+
+def test_retunnel_tolerates_old_tunnel_already_deleted(manager, fake):
+    seed(manager, make_tunnel())
+    _new_id(fake)
+    fake.when_has("tunnel", "delete", result=Result(1, "", f"Tunnel {UUID} has already been deleted"))
+    assert manager.retunnel("Demo").ok
+
+
+def test_retunnel_create_failure_stops_before_dns_and_start(manager, fake):
+    seed(manager, make_tunnel())
+    fake.when_has("tunnel", "create", result=Result(1, "", "boom"))
+    fake.calls.clear()
+    res = manager.retunnel("Demo")
+    assert not res.ok and res.steps[-1].name == "tunnel create"
+    assert res.data["new_uuid"] is None and res.data["old_uuid"] == UUID
+    assert not fake.has_call("route") and not fake.has_call("systemctl", "start")
+
+
+def test_retunnel_dns_failure_keeps_new_id_in_db(manager, fake):
+    seed(manager, make_tunnel())
+    _new_id(fake)
+    fake.when_has("route", result=Result(1, "", "authentication error"))
+    res = manager.retunnel("Demo")
+    assert not res.ok
+    assert manager.db.get_tunnel("Demo").uuid == UUID2
+
+
+def test_retunnel_unknown_tunnel_runs_nothing(manager, fake):
+    res = manager.retunnel("Ghost")
+    assert not res.ok and fake.calls == []

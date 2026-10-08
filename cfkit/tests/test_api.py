@@ -204,6 +204,32 @@ def test_static_assets_served_and_index_has_no_inline_script_or_style(client):
     html = client.get("/").text
     assert 'src="app.js"' in html and 'href="style.css"' in html
     assert "<script>" not in html and "style=" not in html
+    assert 'src="hostutil.js"' in html
+    assert client.get("/hostutil.js").status_code == 200
     assert client.get("/app.js").status_code == 200
     assert "var(--acc)" in client.get("/style.css").text
     assert "default-src 'self'" in client.get("/").headers["content-security-policy"]
+
+
+def test_name_and_user_are_trimmed_before_validation(client):
+    h = login(client)
+    res = client.post("/api/tunnels", json=body(name="  Demo \n", user="toannc "), headers=h).json()
+    assert res["ok"], res
+    assert client.get("/api/tunnels/Demo").json()["user_name"] == "toannc"
+
+
+def test_invalid_name_error_shows_the_rejected_value(client):
+    h = login(client)
+    res = client.post("/api/tunnels", json=body(name="cfkit.f1p.info.vn"), headers=h).json()
+    assert not res["ok"] and "'cfkit.f1p.info.vn'" in res["steps"][0]["detail"]
+
+
+def test_retunnel_endpoint(client, manager, fake):
+    h = login(client)
+    seed(manager, make_tunnel())
+    fake.when_has("tunnel", "create", result=Result(0, "", "Created tunnel Demo with id 99999999-8888-4777-8666-555555555555"))
+    res = client.post("/api/tunnels/Demo/retunnel", headers=h).json()
+    assert res["ok"], res
+    assert res["data"]["new_uuid"] == "99999999-8888-4777-8666-555555555555"
+    assert client.get("/api/tunnels/Demo").json()["uuid"] == res["data"]["new_uuid"]
+    assert client.post("/api/tunnels/Ghost/retunnel", headers=h).json()["ok"] is False

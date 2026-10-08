@@ -86,3 +86,16 @@ pre{background:var(--code);color:var(--codefg);border-radius:8px;padding:12px 14
 .env-note{font-size:12px;color:var(--mute)}
 .panel .card{overflow-x:auto}
 .logbox{white-space:pre-wrap}
+.svc{white-space:nowrap}
+.svc .prefix{color:var(--mute)}
+.svc input.port{width:80px;display:inline-block}
+.svc input.sub{width:130px;display:inline-block}
+.env{grid-template-columns:repeat(auto-fit,minmax(170px,auto))}
+.env input{max-width:200px}
+a.chip.link{color:var(--fg);text-decoration:none}
+a.chip.link:hover{background:var(--acc);color:var(--accfg)}
+a.chip.link::after{content:" ↗";color:var(--mute);font-size:11px}
+a.chip.link:hover::after{color:inherit}
+/* editor as a centered popup covering 80% of the viewport */
+.panel{top:10vh;left:10vw;right:auto;bottom:auto;width:80vw;height:80vh;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+@media(max-width:700px){.panel{top:2vh;left:2vw;width:96vw;height:96vh}}

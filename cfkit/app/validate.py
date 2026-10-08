@@ -29,7 +29,7 @@ def _validate_rule(r: Rule) -> list[str]:
 def validate_tunnel(t: Tunnel) -> list[str]:
     errs: list[str] = []
     if not NAME_RE.fullmatch(t.name):
-        errs.append("name: must start with a letter; letters, digits, '_' and '-' only (max 63)")
+        errs.append(f"name: {t.name!r} is not valid; must start with a letter; letters, digits, '_' and '-' only (max 63)")
     if not USER_RE.fullmatch(t.user_name):
         errs.append("user: invalid system user name")
     for label, val in (("project", t.project), ("note", t.note)):

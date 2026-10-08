@@ -29,13 +29,16 @@ class Cloudflared:
             raise CommandError("could not read tunnel id from cloudflared output")
         return m.group(0)
 
-    def delete(self, name: str, user: str) -> None:
-        r = self._r.run([self._bin(), "tunnel", "delete", "-f", name], user=user)
-        if not r.ok and "not found" not in (r.out + r.err).lower():
+    def delete(self, ref: str, user: str) -> None:
+        """`ref` is the tunnel UUID (preferred) or name; a name fails when Cloudflare has duplicates."""
+        r = self._r.run([self._bin(), "tunnel", "delete", "-f", ref], user=user)
+        text = (r.out + r.err).lower()
+        if not r.ok and "not found" not in text and "already been deleted" not in text:
             raise CommandError(tail(r))
 
-    def route_dns(self, name: str, hostname: str, user: str) -> str:
-        r = self._r.run([self._bin(), "tunnel", "route", "dns", name, hostname], user=user)
+    def route_dns(self, ref: str, hostname: str, user: str, overwrite: bool = False) -> str:
+        flags = ["--overwrite-dns"] if overwrite else []
+        r = self._r.run([self._bin(), "tunnel", "route", "dns", *flags, ref, hostname], user=user)
         if r.ok:
             return ""
         if "already exists" in (r.out + r.err).lower():

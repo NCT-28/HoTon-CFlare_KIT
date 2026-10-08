@@ -228,7 +228,7 @@ class Manager:
             t.uuid = log.do("tunnel create", self.cf.create, t.name, t.user_name)
             log.do("save", self.db.save_tunnel, t)
             for h in hostnames(t):
-                log.do(f"dns {h}", self.cf.route_dns, t.name, h, t.user_name, detail_from_result=True)
+                log.do(f"dns {h}", self.cf.route_dns, t.uuid or t.name, h, t.user_name, detail_from_result=True)
             log.do("write config", self._publish_config, t)
             log.do("write unit", self._write_unit, t)
             log.do("daemon-reload", self.svc.daemon_reload)
@@ -251,7 +251,7 @@ class Manager:
         self._quiet(self.svc.daemon_reload)
         if t.uuid:
             try:
-                self.cf.delete(t.name, t.user_name)
+                self.cf.delete(t.uuid or t.name, t.user_name)
             except CommandError as e:
                 notes.append(f"tunnel delete failed: {e}")
             routed = [s.name[4:] for s in log.steps if s.name.startswith("dns ") and s.ok]
@@ -289,7 +289,7 @@ class Manager:
             replaced = True
             log.do("save", self.db.save_tunnel, new)
             for h in added:
-                log.do(f"dns {h}", self.cf.route_dns, new.name, h, new.user_name, detail_from_result=True)
+                log.do(f"dns {h}", self.cf.route_dns, new.uuid or new.name, h, new.user_name, detail_from_result=True)
             if was_active:
                 log.do("restart", self._restart_checked, new.name)
         except Abort:
@@ -328,11 +328,39 @@ class Manager:
             log.do("disable", self._quiet, self.svc.disable, t.name)
             log.do("remove files", self._remove_files, t)
             log.do("daemon-reload", self.svc.daemon_reload)
-            log.do("tunnel delete", self.cf.delete, t.name, t.user_name)
+            log.do("tunnel delete", self.cf.delete, t.uuid or t.name, t.user_name)
             log.do("remove from db", self.db.delete_tunnel, t.name)
         except Abort:
             return FlowResult(log.steps)
         return FlowResult(log.steps, {"leftover_dns": hostnames(t)})
+
+    # ----- retunnel: new tunnel id, same name/rules -----
+
+    def retunnel(self, name: str) -> FlowResult:
+        return self._locked(name, lambda: self._retunnel(name))
+
+    def _retunnel(self, name: str) -> FlowResult:
+        t = self.db.get_tunnel(name)  # read under the lock
+        if t is None:
+            return _fail("lookup", "tunnel not found")
+        old_uuid = t.uuid
+        new_uuid: str | None = None
+        log = StepLog()
+        try:
+            log.do("stop", self._quiet, self.svc.stop, name)
+            log.do("tunnel delete (old id)", self.cf.delete, old_uuid or name, t.user_name)
+            new_uuid = t.uuid = log.do("tunnel create", self.cf.create, name, t.user_name)
+            log.do("save", self.db.save_tunnel, t)
+            for h in hostnames(t):
+                # the CNAME still points at the deleted tunnel id, so it must be overwritten
+                log.do(f"dns {h}", self.cf.route_dns, t.uuid, h, t.user_name, True, detail_from_result=True)
+            log.do("write config", self._publish_config, t)
+            if old_uuid:
+                log.do("remove old credentials", self.cred_path(t.user_name, old_uuid).unlink, True)
+            log.do("start", self._start_checked, name)
+        except Abort:
+            pass
+        return FlowResult(log.steps, {"old_uuid": old_uuid, "new_uuid": new_uuid})
 
     # ----- start / stop / restart -----
 

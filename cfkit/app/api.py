@@ -65,7 +65,7 @@ def _blank_to_none(v: str | None) -> str | None:
 
 def to_tunnel(b: TunnelIn) -> Tunnel:
     return Tunnel(
-        name=b.name, user_name=b.user_name, project=b.project.strip(), note=b.note.strip(),
+        name=b.name.strip(), user_name=b.user_name.strip(), project=b.project.strip(), note=b.note.strip(),
         rules=[
             Rule(
                 hostname=r.hostname.strip().lower(), service=r.service.strip(),
@@ -198,6 +198,10 @@ def create_app(settings: Settings, manager: Manager, env_service: EnvService) ->
     @app.post("/api/tunnels/{name}/delete", dependencies=write)
     def delete_tunnel(name: str, body: ConfirmIn):
         return out(manager.delete(name, body.confirm))
+
+    @app.post("/api/tunnels/{name}/retunnel", dependencies=write)
+    def retunnel(name: str):
+        return out(manager.retunnel(name))
 
     @app.post("/api/tunnels/{name}/{action}", dependencies=write)
     def control(name: str, action: str):

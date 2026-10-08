@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { csrf: null, tunnels: [], env: null, poll: null };
+const state = { csrf: null, tunnels: [], env: null, poll: null, domain: "" };
 const app = document.getElementById("app");
 const layer = document.getElementById("layer");
 const $ = (s) => document.querySelector(s);
@@ -89,6 +89,7 @@ function showLogin() {
 
 // ---------- main view ----------
 async function boot() {
+  state.domain = HostUtil.normalizeDomain(loadDomain());
   app.replaceChildren(
     h("header", {}, h("h1", {}, "CFKIT · Tunnel Manager"), btn("Đăng xuất", logout)),
     h("main", {}, h("div", { id: "env" }), h("div", { class: "tools", id: "tools" }), h("div", { id: "list" })));
@@ -121,7 +122,11 @@ function renderEnv() {
   const e = state.env;
   const box = $("#env");
   if (!box) return;
-  if (!e) { box.replaceChildren(); return; }
+  const domainBlock = h("div", {}, h("label", {}, "Domain mặc định"),
+    h("input", { value: state.domain, placeholder: "vd: f1p.info.vn",
+      oninput: (ev) => { state.domain = HostUtil.normalizeDomain(ev.target.value); saveDomain(state.domain); } }),
+    h("div", { class: "env-note" }, "Trong editor chỉ cần nhập sub-domain"));
+  if (!e) { box.replaceChildren(h("div", { class: "card env" }, domainBlock)); return; }
   const certs = Object.entries(e.certs);
   box.replaceChildren(h("div", { class: "card env" },
     h("div", {}, h("label", {}, "cloudflared"),
@@ -132,6 +137,7 @@ function renderEnv() {
     h("div", {}, h("label", {}, "cert.pem"),
       certs.length ? certs.map(([u, ok]) => h("div", {}, h("span", { class: `badge ${ok ? "b-ok" : "b-bad"}` }, ok ? u : `${u} · thiếu`)))
         : h("div", { class: "env-note" }, "(chưa có tunnel)")),
+    domainBlock,
     h("div", { class: "envact" },
       btn("Update…", openUpdate), btn("Fix cert.pem…", openCert), btn("Check lại", () => loadEnv(true)))));
 }
@@ -163,7 +169,7 @@ function row(t) {
   const on = t.status === "active";
   return h("tr", {},
     h("td", {}, h("b", {}, t.name), t.note ? h("div", { class: "note" }, t.note) : null),
-    h("td", {}, t.hostnames.map((x) => h("span", { class: "chip" }, x))),
+    h("td", {}, t.hostnames.map((x) => h("a", { class: "chip link", href: `https://${x}`, target: "_blank", rel: "noopener noreferrer", title: `Mở https://${x}` }, x))),
     h("td", {}, statusBadge(t.status)),
     h("td", { class: "mono" }, t.uuid ? `${t.uuid.slice(0, 8)}…` : "-"),
     h("td", {}, t.user_name),
@@ -171,6 +177,7 @@ function row(t) {
       act("Run", "start", on), act("Stop", "stop", !on), act("Restart", "restart", !on),
       h("button", { class: "sm", onclick: () => openEditor(t.name) }, "Edit"),
       h("button", { class: "sm", onclick: () => openLogs(t.name) }, "Logs"),
+      h("button", { class: "sm", onclick: () => openReTunnel(t) }, "ReTunnel"),
       h("button", { class: "sm danger", onclick: () => openDelete(t) }, "Delete"))));
 }
 
@@ -181,7 +188,12 @@ async function control(name, action) {
 }
 
 // ---------- editor (create / edit) ----------
-const emptyRule = () => ({ hostname: "", path: "", service: "http://127.0.0.1:", http_host_header: "", no_tls_verify: false });
+const loadDomain = () => { try { return localStorage.getItem("cfkit.domain") || ""; } catch (_) { return ""; } };
+const saveDomain = (d) => { try { localStorage.setItem("cfkit.domain", d); } catch (_) { /* storage unavailable */ } };
+const DEFAULT_SVC = "http://127.0.0.1:";
+const emptyRule = () => ({ hostname: "", path: "", service: DEFAULT_SVC, http_host_header: "", no_tls_verify: false });
+// A service is "port only" when it is exactly http://127.0.0.1:<digits>; anything else keeps the full URL input.
+const isPortOnly = (service) => service.startsWith(DEFAULT_SVC) && /^\d*$/.test(service.slice(DEFAULT_SVC.length));
 
 async function openEditor(name) {
   let draft;
@@ -203,6 +215,8 @@ async function openEditor(name) {
     })),
   });
 
+  const domain = state.domain;
+
   const field = (label, key, locked) => h("div", {}, h("label", {}, label),
     h("input", { value: draft[key], disabled: locked, oninput: (e) => { draft[key] = e.target.value; } }));
 
@@ -218,18 +232,33 @@ async function openEditor(name) {
 
   function renderRules() {
     const input = (r, key, ph) => h("td", {}, h("input", { value: r[key], placeholder: ph || "", oninput: (e) => { r[key] = e.target.value; } }));
+    const serviceCell = (r) => isPortOnly(r.service)
+      ? h("td", { class: "svc" }, h("span", { class: "prefix mono" }, DEFAULT_SVC),
+          h("input", { class: "port", inputmode: "numeric", placeholder: "5500", value: r.service.slice(DEFAULT_SVC.length),
+            oninput: (e) => { e.target.value = e.target.value.replace(/\D/g, ""); r.service = DEFAULT_SVC + e.target.value; } }))
+      : input(r, "service");
+    const hostCell = (r) => {
+      const sub = HostUtil.subOf(r.hostname, domain);
+      if (sub === null) return input(r, "hostname");
+      const suffix = h("span", { class: "prefix mono" }, sub === "@" ? `= ${domain}` : `.${domain}`);
+      return h("td", { class: "svc" },
+        h("input", { class: "sub", value: sub, placeholder: "sub hoặc @",
+          oninput: (e) => { r.hostname = HostUtil.toHost(e.target.value, domain); suffix.textContent = e.target.value.trim() === "@" ? `= ${domain}` : `.${domain}`; } }),
+        suffix);
+    };
     const move = (i, d) => { const j = i + d; if (j < 0 || j >= draft.rules.length) return; [draft.rules[i], draft.rules[j]] = [draft.rules[j], draft.rules[i]]; renderRules(); };
     rulesBox.replaceChildren(
       h("table", {},
         h("tr", {}, ["", "Hostname", "Path", "Service", "Host header", "noTLS", ""].map((c) => h("th", {}, c))),
         draft.rules.map((r, i) => h("tr", {},
           h("td", {}, h("button", { class: "sm", onclick: () => move(i, -1) }, "↑"), h("button", { class: "sm", onclick: () => move(i, 1) }, "↓")),
-          input(r, "hostname"), input(r, "path", "(mọi path)"), input(r, "service"), input(r, "http_host_header"),
+          hostCell(r), input(r, "path", "(mọi path)"), serviceCell(r), input(r, "http_host_header"),
           h("td", {}, h("input", { type: "checkbox", checked: r.no_tls_verify, onchange: (e) => { r.no_tls_verify = e.target.checked; } })),
           h("td", {}, h("button", { class: "sm danger", onclick: () => { draft.rules.splice(i, 1); renderRules(); } }, "✕")))),
         h("tr", { class: "fixed" }, h("td", {}, "🔒"), h("td", { colspan: 2 }, "(catch-all, tự động)"), h("td", { colspan: 4 }, "http_status:404"))),
       h("div", { class: "row mt" }, btn("+ Add rule", () => { draft.rules.push(emptyRule()); renderRules(); }, "sm"),
-        h("span", { class: "note" }, "thứ tự quan trọng: cloudflared khớp từ trên xuống")));
+        h("span", { class: "note" }, "thứ tự quan trọng: cloudflared khớp từ trên xuống"),
+        domain ? null : h("span", { class: "note" }, "· đặt “Domain mặc định” ở khung cloudflared để chỉ nhập sub-domain")));
   }
 
   async function preview() {
@@ -325,6 +354,31 @@ function openDelete(t) {
     h("div", {}, t.hostnames.map((x) => h("span", { class: "chip" }, x))),
     h("label", { class: "mt" }, `Gõ ${t.name} để xác nhận`), input, out,
   ], [btn("Đóng", closeLayer), del]);
+}
+
+function openReTunnel(t) {
+  const out = h("div", {});
+  const go = h("button", { class: "pri", onclick: async () => {
+    go.disabled = true;
+    out.replaceChildren("Đang chạy…");
+    try {
+      const res = await api("POST", `/api/tunnels/${encodeURIComponent(t.name)}/retunnel`);
+      out.replaceChildren(stepsList(res.steps));
+      if (res.data && res.data.new_uuid) {
+        out.append(h("div", { class: res.ok ? "" : "warn-line" }, `ID cũ: ${res.data.old_uuid || "-"} → ID mới: ${res.data.new_uuid}`));
+      } else if (!res.ok) {
+        out.append(h("div", { class: "warn-line" }, "Tunnel cũ có thể đã bị xóa nhưng chưa tạo được tunnel mới. Bấm ReTunnel lại sau khi sửa lỗi."));
+      }
+      if (!res.ok) go.disabled = false;
+    } catch (ex) { out.textContent = ex.message; go.disabled = false; }
+    loadTunnels();
+  } }, "ReTunnel");
+  openModal(`ReTunnel «${t.name}»`, [
+    h("p", { class: "note" }, "Sẽ: dừng service → xóa tunnel ID hiện tại trên Cloudflare → tạo tunnel mới cùng tên (ID mới) → ghi đè DNS record trỏ về ID mới → ghi lại config → chạy lại."),
+    h("p", { class: "warn-line" }, "Tunnel gián đoạn vài giây. Hostname, rule, user giữ nguyên; chỉ ID đổi."),
+    h("div", {}, t.hostnames.map((x) => h("span", { class: "chip" }, x))),
+    t.uuid ? h("p", { class: "mono" }, `ID hiện tại: ${t.uuid}`) : null, out,
+  ], [btn("Đóng", closeLayer), go]);
 }
 
 async function openImport() {
