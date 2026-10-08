@@ -198,3 +198,12 @@ def test_import_scan_and_commit(client, settings, tmp_path):
 def test_index_served_without_login(client):
     r = client.get("/")
     assert r.status_code == 200 and "<title>" in r.text
+
+
+def test_static_assets_served_and_index_has_no_inline_script_or_style(client):
+    html = client.get("/").text
+    assert 'src="app.js"' in html and 'href="style.css"' in html
+    assert "<script>" not in html and "style=" not in html
+    assert client.get("/app.js").status_code == 200
+    assert "var(--acc)" in client.get("/style.css").text
+    assert "default-src 'self'" in client.get("/").headers["content-security-policy"]
